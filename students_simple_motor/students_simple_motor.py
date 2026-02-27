@@ -5,28 +5,44 @@ from matplotlib.widgets import Slider
 
 
 class SimpleMotor:
-    def __init__(self, join_inert=0.01, joint_fric=0.1, Kp=50.0, Kd=5.0, torque_max=5.0, dt=0.001, T=2.0):
-        
-        # Physical parameters
-        self.J = join_inert
-        self.damping = joint_fric
-        self.Kp = Kp
-        self.Kd = Kd
-        self.torque_max = torque_max
+    def __init__(
+        self,
+        J_load=0.02,
+        J_motor=0.005,
+        gear_ratio=15.0,
+        damping=0.1,
+        Kp=50.0,
+        Kd=5.0,
+        torque_max=2.0,
+        dt=0.002,
+        T=5.0
+    ):
 
-        # Simulation parameters
-        self.dt = dt
-        self.T = T
-        self.steps = int(T / dt)
-        self.time = np.linspace(0, T, self.steps)
+        # Physical parameters
+        self.J_load = float(J_load)
+        self.J_motor = float(J_motor)
+        self.gear = float(gear_ratio)
+        self.damping = float(damping)
+
+        # Reflected inertia at joint
+        self.J_eff = self.J_load + self.J_motor * self.gear**2
+
+        # Controller
+        self.Kp = float(Kp)
+        self.Kd = float(Kd)
+        self.torque_max = float(torque_max)
+
+        # Simulation
+        self.dt = float(dt)
+        self.T = float(T)
+        self.steps = int(self.T / self.dt)
+        self.time = np.linspace(0, self.T, self.steps)
 
     def simulate(self, theta_target):
 
-        # State variables
         theta = 0.0
         theta_dot = 0.0
 
-        # History arrays
         theta_hist = np.zeros(self.steps)
         theta_dot_hist = np.zeros(self.steps)
         theta_ddot_hist = np.zeros(self.steps)
@@ -34,27 +50,32 @@ class SimpleMotor:
 
         for i in range(self.steps):
 
-            # PD control torque
+            # --- PD control ---
             error = theta_target - theta
-            torque = self.Kp * error - self.Kd * theta_dot
+            tau_cmd = self.Kp * error - self.Kd * theta_dot
 
-            # Torque saturation
-            torque = np.clip(torque, -self.torque_max, self.torque_max)
+            # --- Convert to motor torque ---
+            tau_motor = tau_cmd / self.gear
 
-            # Dynamics: J*theta_ddot = tau - b*theta_dot
-            theta_ddot = (torque - self.damping * theta_dot) / self.J
+            # --- Motor saturation ---
+            tau_motor = np.clip(tau_motor, -self.torque_max, self.torque_max)
 
-            # Integrate (Euler)
+            # --- Back to joint torque ---
+            torque = tau_motor * self.gear
+
+            # --- Dynamics ---
+            theta_ddot = (torque - self.damping * theta_dot) / self.J_eff
+
+            # --- Semi-implicit Euler ---
             theta_dot += theta_ddot * self.dt
             theta += theta_dot * self.dt
 
-            # Store history
             theta_hist[i] = theta
             theta_dot_hist[i] = theta_dot
             theta_ddot_hist[i] = theta_ddot
             torque_hist[i] = torque
 
-        return (theta_hist, theta_dot_hist, theta_ddot_hist, torque_hist)
+        return theta_hist, theta_dot_hist, theta_ddot_hist, torque_hist
 
 
 # -------------------------------------------------
@@ -92,7 +113,7 @@ arm_line, = ax_arm.plot([], [], lw=4)
 
 # ---- Position ----
 ax_pos.set_xlim(0, motor.T)
-ax_pos.set_ylim(-0.1, np.pi)
+ax_pos.set_ylim(-0.1, 5)
 ax_pos.set_ylabel("Position [rad]")
 ax_pos.grid()
 pos_line, = ax_pos.plot([], [], label="θ")
@@ -115,7 +136,7 @@ acc_line, = ax_acc.plot([], [], color="tab:purple")
 
 # ---- Torque ----
 ax_tau.set_xlim(0, motor.T)
-ax_tau.set_ylim(-motor.torque_max * 1.2, motor.torque_max * 1.2)
+ax_tau.set_ylim(-motor.torque_max * 20, motor.torque_max * 20)
 ax_tau.set_ylabel("Motor Torque [Nm]")
 ax_tau.set_xlabel("Time [s]")
 ax_tau.grid()

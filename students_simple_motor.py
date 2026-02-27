@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import Slider
 
-
+##
 class SimpleMotor:
     def __init__(self, join_inert=0.01, joint_fric=0.1, Kp=50.0, Kd=5.0, torque_max=5.0, dt=0.001, T=2.0):
         
